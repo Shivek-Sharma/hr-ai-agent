@@ -2,15 +2,61 @@ import axios from "axios";
 import * as cheerio from "cheerio";
 import Anthropic from "@anthropic-ai/sdk";
 import dotenv from "dotenv";
+import dayjs from "dayjs";
+import customParseFormat from "dayjs/plugin/customParseFormat.js";
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
 
 import sources from "../config/source.js";
 import { policiesExtractionPrompt } from "../constants/prompts.js";
+import { semanticMatchingPrompt } from "../constants/prompts.js";
+import policyModel from "../models/policies.schema.js";
 
 dotenv.config();
+dayjs.extend(customParseFormat);
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logDir = path.join(__dirname, '..', 'logs');
+const logFile = path.join(logDir, 'crawler.log');
+
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir);
+}
+
+function writeLog(data) {
+  const timestamp = new Date().toISOString();
+  
+  let message;
+  if (typeof data === 'object') {
+    message = JSON.stringify(data, null, 2);
+  } else {
+    message = data;
+  }
+
+  const logMessage = `[${timestamp}] ${message}\n`;
+
+  fs.appendFileSync(logFile, logMessage, 'utf8');
+}
+
+function parsePublishedAt(dateString) {
+  if (!dateString) return null;
+
+  const formats = ["DD/MM/YYYY", "MMMM D, YYYY"];
+  for (const format of formats) {
+    const parsed = dayjs(dateString, format);
+    if (parsed.isValid()) {
+      return parsed.toDate();
+    }
+  }
+
+  return null;
+}
 
 async function fetchData(url) {
   try {
@@ -59,30 +105,135 @@ async function extractPolicies(html) {
   return JSON.parse(cleanText);
 }
 
+async function newPolicyChecker(storedPolicies, extractedPolicy) {
+  const userPrompt = `
+    Target Policy:
+    Title: ${extractedPolicy.title}
+    Description: ${extractedPolicy.description}
+
+    Stored Policies:
+    ${storedPolicies
+      .map(
+        (p, i) =>
+          `${i + 1}. Title: ${p.title}\n   Description: ${p.description}`
+      )
+      .join("\n\n")}
+  `;
+
+  const response = await anthropic.messages.create({
+    model: "claude-sonnet-4-5-20250929",
+    max_tokens: 2000,
+    temperature: 1,
+    system: semanticMatchingPrompt,
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: userPrompt,
+          },
+        ],
+      },
+    ],
+  });
+
+  // return response.content[0].text === "Yes" ? true : false; // Yes - new policy
+  return response.content[0].text;
+}
+
 async function crawler() {
   try {
     for (const source of sources) {
+      const policiesToInsert = [];
+
       console.log("Fetching URL:", source.url);
       const html = await fetchData(source.url);
       if (!html) {
         console.error("No HTML returned — likely blocked or invalid response.");
-				continue;
+        continue;
       }
 
       const $ = cheerio.load(html);
 
+      let publishedAt = null;
+      if (
+        source.selectors.publishedAt &&
+        $(source.selectors.publishedAt).length > 0
+      ) {
+        publishedAt = $(source.selectors.publishedAt).text();
+      }
+
       // console.log("found elements:", $(source.selectors.container).length);
       const policyContainer = $(source.selectors.container).html();
-      // console.log("policies extracted html:", policyContainer);
       const extractedPolicies = await extractPolicies(policyContainer);
-      // console.log("Extracted Policies:", extractedPolicies)
 
-			let publishedAt = null;
-			if (source.selectors.publishedAt && $(source.selectors.publishedAt).length > 0) {
-				publishedAt = $(source.selectors.publishedAt).text();
-			}
-			// console.log("published at:", publishedAt)
+      const storedPolicies = await policyModel.find(
+        { sourceName: { $ne: source.name } },
+        { title: 1, description: 1, _id: 0 }
+      );
+
+      let storedPoliciesTitles = await policyModel.find(
+        {},
+        { title: 1, _id: 0 }
+      );
+      storedPoliciesTitles = storedPoliciesTitles.map((policy) => policy.title);
+
+      for (const policy of extractedPolicies) {
+        const policyTitle = policy.title?.trim();
+        const policyDesc = policy.description?.trim();
+
+        if (storedPoliciesTitles.includes(policyTitle)) {
+          writeLog({ action: 'skipped', title: policyTitle, description: policyDesc, source: source.name });
+          continue;
+        }
+
+        const isNewPolicy = await newPolicyChecker(storedPolicies, policy);
+        if (isNewPolicy !== "Yes") {
+          writeLog({ action: 'skipped', title: policyTitle, description: policyDesc, source: source.name, isNewPolicy: isNewPolicy });
+          continue;
+        }
+
+        const modifiedPolicy = {
+          title: policyTitle,
+          description: policyDesc,
+          sourceUrl: source.url,
+          sourceName: source.name,
+        };
+
+        if (publishedAt) {
+          modifiedPolicy["publishedAt"] = parsePublishedAt(publishedAt);
+        }
+
+        policiesToInsert.push(modifiedPolicy);
+        writeLog({ action: 'inserting...', title: policyTitle, description: policyDesc, source: source.name });
+      }
+
+      if (policiesToInsert.length > 0) {
+        // console.log(
+        //   `new policies to insert from ${source.name}:`,
+        //   policiesToInsert
+        // );
+        try {
+          const result = await policyModel.insertMany(policiesToInsert, {
+            ordered: false,
+          });
+          console.log(
+            `Inserted ${result.length} new policies successfully from ${source.name}`
+          );
+        } catch (error) {
+          console.error(
+            `Bulk insert error for new policies from ${source.name}:`,
+            error.message
+          );
+        } finally {
+          policiesToInsert.length = 0;
+        }
+      } else {
+        console.log("no new policies to insert");
+      }
     }
+    console.log("crawling done.");
   } catch (error) {
     console.error("Crawling Exception:", error.message);
   }

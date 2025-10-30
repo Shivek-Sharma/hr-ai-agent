@@ -12,6 +12,11 @@ const policySchema = new Schema(
       required: true,
     },
 
+    sourceName: {
+      type: String,
+      required: true,
+    },
+
     sourceUrl: {
       type: String,
       required: true,
