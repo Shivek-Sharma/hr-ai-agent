@@ -32,40 +32,51 @@ INPUT FORMAT:
 
 UNIQUENESS CRITERIA:
 A policy is considered NOT UNIQUE (duplicate) if ANY stored policy has:
-- **High Semantic Similarity**: Same core concept with different wording
-  - Synonyms and related concepts (e.g., "vehicle" ≈ "automobile")
-  - Different phrasings of the same idea
-  - Domain-specific terminology variations
+- **High Semantic Similarity**: Very similar core concept with different wording
+  - Direct synonyms and closely related concepts (e.g., "vehicle" ≈ "automobile", "remote work" ≈ "telecommuting")
+  - Essentially the same idea with different phrasing
+  - Domain-specific terminology that means the same thing
 
-- **Contextual Equivalence**: 
-  - Combined title + description convey essentially the same policy
-  - Minor differences in formatting, detail level, or wording don't matter
+- **Strong Intent Alignment**: Addresses fundamentally the same issue or purpose
+  - Identical or nearly identical underlying goals
+  - Substantial overlapping coverage areas (>80%)
+  - Very similar scope and specificity level
+
+- **Clear Contextual Equivalence**: 
+  - Combined title + description convey essentially the same policy with minimal variation
+  - One policy could reasonably substitute for the other
+  - Core requirements and guidelines are the same
 
 DUPLICATE DETECTION THRESHOLD:
 Consider policies as duplicates (NOT UNIQUE) if similarity would be scored ≥80 on a 0-100 scale:
-- 80-100: Substantial overlap → NOT UNIQUE
+- 80-100: Clear substantial overlap → NOT UNIQUE
 - 0-79: Sufficiently different → UNIQUE
 
 IMPORTANT CONSIDERATIONS:
-- Ignore trivial differences (formatting, article usage, punctuation, minor wording)
-- Detect implications and indirect references
-- Consider industry/domain context
-- Err on the side of marking as duplicate to prevent redundancy
-- A policy is unique ONLY if it addresses a clearly different topic/scope from ALL stored policies
+- Allow for reasonable differences in scope, detail level, and emphasis
+- Policies covering related but distinct aspects should be considered unique
+- General vs. specific versions of a concept can coexist (e.g., "Employee Benefits" vs. "Healthcare Benefits")
+- Different perspectives on similar topics are acceptable (e.g., "Data Security" vs. "Password Requirements")
+- Focus on true duplicates rather than related policies
+- A policy is duplicate ONLY if it's clearly redundant with an existing stored policy
 
 EXAMPLES:
 Target: { title: "Remote Work Policy", description: "Guidelines for employees working from home" }
 Stored: { title: "Telecommuting Guidelines", description: "Rules for off-site employee work arrangements" }
-→ Output: No (Same concept, different terminology)
+→ Output: No (Essentially identical concept, just different terminology)
 
-Target: { title: "Remote Work Policy", description: "Guidelines for employees working from home" }
-Stored: { title: "Vacation Policy", description: "Guidelines for requesting paid time off" }
-→ Output: Yes (Completely different policies)
+Target: { title: "Remote Work Equipment", description: "IT equipment provided for home office setups" }
+Stored: { title: "Remote Work Policy", description: "Guidelines for employees working from home" }
+→ Output: Yes (Related but distinct - one is about equipment, other is about general guidelines)
+
+Target: { title: "Data Privacy Policy", description: "Guidelines for handling customer personal information" }
+Stored: { title: "Information Security", description: "Protocols for protecting company data and systems" }
+→ Output: Yes (Related concepts but different focus - privacy vs. security)
 
 OUTPUT REQUIREMENT:
 Respond with ONLY one word:
-- "Yes" if the target policy is unique (no substantial matches found in stored policies)
-- "No" if the target policy is NOT unique (at least one substantial match exists in stored policies)
+- "Yes" if the target policy is unique (no clear duplicates found in stored policies)
+- "No" if the target policy is NOT unique (at least one clear duplicate exists in stored policies)
 
 Return nothing else - no explanation, no punctuation, just "Yes" or "No".
 `;

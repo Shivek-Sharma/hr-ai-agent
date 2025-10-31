@@ -4,14 +4,15 @@ import Anthropic from "@anthropic-ai/sdk";
 import dotenv from "dotenv";
 import dayjs from "dayjs";
 import customParseFormat from "dayjs/plugin/customParseFormat.js";
-import fs from 'fs';
-import { fileURLToPath } from 'url';
-import path from 'path';
+import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 
 import sources from "../config/source.js";
 import { policiesExtractionPrompt } from "../constants/prompts.js";
 import { semanticMatchingPrompt } from "../constants/prompts.js";
 import policyModel from "../models/policies.schema.js";
+import logModel from "../models/logs.schema.js";
 
 dotenv.config();
 dayjs.extend(customParseFormat);
@@ -22,18 +23,18 @@ const anthropic = new Anthropic({
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const logDir = path.join(__dirname, '..', 'logs');
-const logFile = path.join(logDir, 'crawler.log');
+const logDir = path.join(__dirname, "..", "logs");
+const logFile = path.join(logDir, "crawler.log");
 
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir);
 }
 
-function writeLog(data) {
+async function writeLog(data) {
   const timestamp = new Date().toISOString();
-  
+
   let message;
-  if (typeof data === 'object') {
+  if (typeof data === "object") {
     message = JSON.stringify(data, null, 2);
   } else {
     message = data;
@@ -41,7 +42,9 @@ function writeLog(data) {
 
   const logMessage = `[${timestamp}] ${message}\n`;
 
-  fs.appendFileSync(logFile, logMessage, 'utf8');
+  fs.appendFileSync(logFile, logMessage, "utf8");
+
+  await logModel.create(data);
 }
 
 function parsePublishedAt(dateString) {
@@ -184,13 +187,25 @@ async function crawler() {
         const policyDesc = policy.description?.trim();
 
         if (storedPoliciesTitles.includes(policyTitle)) {
-          writeLog({ action: 'skipped', title: policyTitle, description: policyDesc, source: source.name });
+          await writeLog({
+            action: "skipping...",
+            isDuplicate: true,
+            title: policyTitle,
+            description: policyDesc,
+            sourceName: source.name,
+          });
           continue;
         }
 
         const isNewPolicy = await newPolicyChecker(storedPolicies, policy);
         if (isNewPolicy !== "Yes") {
-          writeLog({ action: 'skipped', title: policyTitle, description: policyDesc, source: source.name, isNewPolicy: isNewPolicy });
+          await writeLog({
+            action: "skipping...",
+            isDuplicate: true,
+            title: policyTitle,
+            description: policyDesc,
+            sourceName: source.name,
+          });
           continue;
         }
 
@@ -206,7 +221,13 @@ async function crawler() {
         }
 
         policiesToInsert.push(modifiedPolicy);
-        writeLog({ action: 'inserting...', title: policyTitle, description: policyDesc, source: source.name });
+        await writeLog({
+          action: "inserting...",
+          isDuplicate: false,
+          title: policyTitle,
+          description: policyDesc,
+          sourceName: source.name,
+        });
       }
 
       if (policiesToInsert.length > 0) {
@@ -230,10 +251,10 @@ async function crawler() {
           policiesToInsert.length = 0;
         }
       } else {
-        console.log("no new policies to insert");
+        console.log(`No new policies to insert from ${source.name}`);
       }
     }
-    console.log("crawling done.");
+    console.log("Crawling from all the sources completed.");
   } catch (error) {
     console.error("Crawling Exception:", error.message);
   }
