@@ -1,10 +1,12 @@
 import express from "express";
 
 import crawler from "../utilities/crawler.js";
+import authenticateToken from "../middlewares/apiAuth.js";
+import apiLimiter from "../middlewares/rateLimiter.js";
 
 const router = express.Router();
 
-router.get("/", async (req, res) => {
+router.get("/", authenticateToken, apiLimiter, async (req, res) => {
   try {
     await crawler();
 
