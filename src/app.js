@@ -33,7 +33,7 @@ const startServer = async () => {
   try {
     connectMongoDB(process.env.MONGO_URI);
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server started at: http://localhost:${PORT}`);
     });
   } catch (error) {
