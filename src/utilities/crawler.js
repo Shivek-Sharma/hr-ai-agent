@@ -172,12 +172,12 @@ async function crawler() {
       const extractedPolicies = await extractPolicies(policyContainer);
 
       const storedPolicies = await policyModel.find(
-        { sourceName: { $ne: source.name } },
+        { sourceName: { $ne: source.name }, isDeleted: false },
         { title: 1, description: 1, _id: 0 }
       );
 
       let storedPoliciesTitles = await policyModel.find(
-        {},
+        { isDeleted: false },
         { title: 1, _id: 0 }
       );
       storedPoliciesTitles = storedPoliciesTitles.map((policy) => policy.title);

@@ -93,4 +93,68 @@ router.get("/", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/v1/policies/{id}:
+ *   delete:
+ *     tags:
+ *       - Policies
+ *     summary: Soft delete a HR policy by ID
+ *     description: Soft deletes a HR policy by its ID.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The ID of the policy to delete.
+ *     responses:
+ *       200:
+ *         description: Successfully soft deleted the policy.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Policy soft-deleted successfully"
+ *       404:
+ *         description: Policy not found.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Policy not found"
+ */
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const deletedPolicy = await policyModel.updateOne(
+      { _id: id, isDeleted: false },
+      { $set: { isDeleted: true } }
+    );
+
+    if (deletedPolicy.matchedCount < 1) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Policy not found" });
+    }
+
+    res.status(200).json({ success: true, message: "Policy soft-deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;
